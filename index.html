@@ -647,7 +647,7 @@ html, body {
         </div>
 
         <div class="card" style="margin-bottom:10px;">
-          <div class="card-head">Soglie minime</div>
+          <div class="card-head">📦 Carico Magazzino</div>
           <div id="cfg-soglie"></div>
         </div>
 
@@ -795,6 +795,20 @@ html, body {
 </div>
 
 <script>
+// ── Blocco zoom su mobile (doppio tap + pinch) ──
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); }, {passive:false});
+document.addEventListener('gesturechange', function(e){ e.preventDefault(); }, {passive:false});
+document.addEventListener('gestureend', function(e){ e.preventDefault(); }, {passive:false});
+let _lastTap=0;
+document.addEventListener('touchend', function(e){
+  const now=Date.now();
+  if(now-_lastTap<300){ e.preventDefault(); }
+  _lastTap=now;
+}, {passive:false});
+document.addEventListener('touchmove', function(e){
+  if(e.touches.length>1){ e.preventDefault(); }
+}, {passive:false});
+
 // ═══ STATO ═══
 let articoli = [], storico = [], cfg = { tel:'', key:'' };
 let managerPin = '1234';
@@ -1327,14 +1341,19 @@ function renderCfg() {
   el.innerHTML = articoli.length
     ? articoli.map(a=>`
       <div class="soglia-row">
-        <div>
-          <div style="font-weight:700;font-size:13px;">${a.nome}${a.modello?' <span style="color:var(--fg2);font-weight:400">'+a.modello+'</span>':''}</div>
-          <div style="font-size:11px;color:var(--fg2);">${a.categoria||''}</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${emojiHtml(a)}</div>
+          <div>
+            <div style="font-weight:700;font-size:13px;">${a.nome}${a.modello?' <span style="color:var(--fg2);font-weight:400">'+a.modello+'</span>':''}</div>
+            <div style="font-size:11px;color:var(--fg2);">${a.categoria||''}</div>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <input type="number" min="0" value="${a.soglia||0}"
-            style="width:60px;padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--fg);font-family:inherit;font-size:13px;text-align:center;"
-            onchange="articoli.find(x=>x.id==='${a.id}').soglia=+this.value;saveArt();renderHome();">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="(function(){var a=articoli.find(x=>x.id==='${a.id}');if(a&&a.qty>0){a.qty--;saveArt();renderHome();renderCfg();}})()" style="width:34px;height:34px;border-radius:10px;border:none;background:#f5c800;color:#1a1a1a;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">−</button>
+          <input type="number" min="0" value="${a.qty||0}" id="soglia-${a.id}"
+            style="width:52px;padding:5px 4px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--fg);font-family:inherit;font-size:15px;font-weight:700;text-align:center;"
+            onchange="articoli.find(x=>x.id==='${a.id}').qty=+this.value;saveArt();renderHome();">
+          <button onclick="(function(){var a=articoli.find(x=>x.id==='${a.id}');if(a){a.qty++;saveArt();renderHome();renderCfg();}})()" style="width:34px;height:34px;border-radius:10px;border:none;background:#f5c800;color:#1a1a1a;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">+</button>
           <span style="font-size:11px;color:var(--fg2);">${a.unita||'pz'}</span>
         </div>
       </div>`).join('')
