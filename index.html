@@ -438,7 +438,7 @@ html, body {
 .modal-title { font-size: 18px; font-weight: 900; margin-bottom: 16px; }
 </style>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.19.1/zxing.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <!-- ══ LOGIN ══ -->
@@ -564,7 +564,7 @@ html, body {
     <div class="view" id="view-scan">
       <div class="scan-body">
         <div class="scanner-box">
-          <video id="scan-video" playsinline autoplay muted></video>
+          <div id="scan-video" style="width:100%;"></div>
           <div class="scan-overlay">
             <div class="scan-frame">
               <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
@@ -1213,26 +1213,36 @@ function startScanner() {
   if (scanning) return;
   resetScanUI();
   document.getElementById('scan-lbl').textContent='Avvio camera…';
-
-  if (typeof ZXing !== 'undefined') {
-    try {
-      codeReader=new ZXing.BrowserMultiFormatReader();
-      codeReader.decodeFromVideoDevice(null,'scan-video',(res,err)=>{ if(res)onCode(res.text); });
-      scanning=true;
-      document.getElementById('scan-lbl').textContent='Punta il codice a barre';
-      return;
-    } catch(e){}
+  try {
+    codeReader = new Html5Qrcode('scan-video');
+    codeReader.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 }, disableFlip: false },
+      (decodedText) => { onCode(decodedText); },
+      () => {}
+    ).then(() => {
+      scanning = true;
+      document.getElementById('scan-lbl').textContent = 'Punta il QR code';
+    }).catch((err) => {
+      document.getElementById('scan-lbl').textContent = '❌ Camera non disponibile';
+    });
+  } catch(e) {
+    document.getElementById('scan-lbl').textContent = '❌ Errore scanner';
   }
-  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
-    .then(s=>{ document.getElementById('scan-video').srcObject=s; scanning=true; document.getElementById('scan-lbl').textContent='Inserisci barcode manualmente'; })
-    .catch(()=>{ document.getElementById('scan-lbl').textContent='❌ Camera non disponibile'; });
 }
 
 function stopScanner() {
   if (!scanning) return;
-  try{ if(codeReader){codeReader.reset();codeReader=null;} }catch(e){}
-  try{ const v=document.getElementById('scan-video'); if(v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;} }catch(e){}
-  scanning=false;
+  scanning = false;
+  try {
+    if (codeReader) {
+      codeReader.stop().then(() => {
+        codeReader.clear();
+        codeReader = null;
+        document.getElementById('scan-video').innerHTML = '';
+      }).catch(() => { codeReader = null; });
+    }
+  } catch(e) { codeReader = null; }
 }
 
 function resetScanUI() {
