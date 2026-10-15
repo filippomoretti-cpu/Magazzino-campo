@@ -438,7 +438,7 @@ html, body {
 .modal-title { font-size: 18px; font-weight: 900; margin-bottom: 16px; }
 </style>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <!-- ══ LOGIN ══ -->
@@ -564,7 +564,8 @@ html, body {
     <div class="view" id="view-scan">
       <div class="scan-body">
         <div class="scanner-box">
-          <div id="scan-video" style="width:100%;"></div>
+          <video id="scan-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:block;"></video>
+          <canvas id="scan-canvas" style="display:none;"></canvas>
           <div class="scan-overlay">
             <div class="scan-frame">
               <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
@@ -1208,41 +1209,52 @@ function stepOp(d){ opQty=Math.max(1,opQty+d); document.getElementById('op-qty')
 function opPrel(){ const a=articoli.find(x=>x.id===opId); if(a){mov(a,-opQty,'prelievo');} closeM('m-op'); renderHome(); }
 function opCar(){  const a=articoli.find(x=>x.id===opId); if(a){mov(a,+opQty,'carico');}  closeM('m-op'); renderHome(); }
 
-// ═══ SCANNER ═══
+// ═══ SCANNER (jsQR – nativo, compatibile iOS/Android) ═══
+let _scanRaf = null;
+let _scanStream = null;
+
 function startScanner() {
   if (scanning) return;
   resetScanUI();
-  document.getElementById('scan-lbl').textContent='Avvio camera…';
-  try {
-    codeReader = new Html5Qrcode('scan-video');
-    codeReader.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 220 }, disableFlip: false },
-      (decodedText) => { onCode(decodedText); },
-      () => {}
-    ).then(() => {
+  document.getElementById('scan-lbl').textContent = 'Avvio camera…';
+  const video = document.getElementById('scan-video');
+  const canvas = document.getElementById('scan-canvas');
+  const ctx = canvas.getContext('2d');
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    .then(stream => {
+      _scanStream = stream;
+      video.srcObject = stream;
+      video.play();
       scanning = true;
       document.getElementById('scan-lbl').textContent = 'Punta il QR code';
-    }).catch((err) => {
-      document.getElementById('scan-lbl').textContent = '❌ Camera non disponibile';
+
+      function tick() {
+        if (!scanning) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
+          if (code && code.data) { onCode(code.data); }
+        }
+        _scanRaf = requestAnimationFrame(tick);
+      }
+      _scanRaf = requestAnimationFrame(tick);
+    })
+    .catch(() => {
+      document.getElementById('scan-lbl').textContent = '❌ Camera non disponibile – controlla i permessi';
     });
-  } catch(e) {
-    document.getElementById('scan-lbl').textContent = '❌ Errore scanner';
-  }
 }
 
 function stopScanner() {
   if (!scanning) return;
   scanning = false;
-  try {
-    if (codeReader) {
-      codeReader.stop().then(() => {
-        codeReader.clear();
-        codeReader = null;
-        document.getElementById('scan-video').innerHTML = '';
-      }).catch(() => { codeReader = null; });
-    }
-  } catch(e) { codeReader = null; }
+  if (_scanRaf) { cancelAnimationFrame(_scanRaf); _scanRaf = null; }
+  if (_scanStream) { _scanStream.getTracks().forEach(t => t.stop()); _scanStream = null; }
+  const video = document.getElementById('scan-video');
+  if (video) { video.srcObject = null; }
 }
 
 function resetScanUI() {
@@ -1519,12 +1531,20 @@ function loadDemo() {
     {cat:'Bautest',e:'📋',nome:'Cartellette',mod:'',qty:0,s:5,u:'pz'},
     {cat:'Bautest',e:'📋',nome:'Foglio Bautest',mod:'',qty:0,s:5,u:'pz'},
   ];
-  articoli=demo.map(d=>({id:uid(),nome:d.nome,categoria:d.cat,emoji:d.e,qty:d.qty,soglia:d.s,unita:d.u,modello:d.mod,barcode:''}));
+  // ID FISSI: generati una volta sola con hash stabile da nome+mod+cat
+  // Così i QR stampati funzionano sempre, anche dopo reset
+  function stableId(cat,nome,mod){
+    const str=[cat,nome,mod].join('|').toLowerCase().replace(/\s+/g,'_');
+    let h=0;
+    for(let i=0;i<str.length;i++){h=(Math.imul(31,h)+str.charCodeAt(i))|0;}
+    return 'mg_'+Math.abs(h).toString(36).padStart(6,'0');
+  }
+  articoli=demo.map(d=>({id:stableId(d.cat,d.nome,d.mod),nome:d.nome,categoria:d.cat,emoji:d.e,qty:d.qty,soglia:d.s,unita:d.u,modello:d.mod,barcode:''}));
   saveArt();
 }
 
 // ═══ INIT ═══
-const CATALOGO_VER = '8';
+const CATALOGO_VER = '9';
 load();
 // Se il catalogo è vecchio o vuoto, carica quello ufficiale
 if (!localStorage.getItem('mg_art_ver') || localStorage.getItem('mg_art_ver') !== CATALOGO_VER) {
