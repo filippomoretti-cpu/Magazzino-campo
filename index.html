@@ -439,6 +439,7 @@ html, body {
 </style>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.4/dist/quagga.min.js"></script>
 
 <!-- ══ LOGIN ══ -->
 <div id="screen-login">
@@ -563,8 +564,7 @@ html, body {
     <div class="view" id="view-scan">
       <div class="scan-body">
         <div class="scanner-box">
-          <video id="scan-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:block;"></video>
-          <canvas id="scan-canvas" style="display:none;"></canvas>
+          <div id="scan-video" style="width:100%;height:100%;position:relative;"></div>
           <div class="scan-overlay">
             <div class="scan-frame">
               <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
@@ -1208,86 +1208,55 @@ function stepOp(d){ opQty=Math.max(1,opQty+d); document.getElementById('op-qty')
 function opPrel(){ const a=articoli.find(x=>x.id===opId); if(a){mov(a,-opQty,'prelievo');} closeM('m-op'); renderHome(); }
 function opCar(){  const a=articoli.find(x=>x.id===opId); if(a){mov(a,+opQty,'carico');}  closeM('m-op'); renderHome(); }
 
-// ═══ SCANNER – BarcodeDetector nativo (Chrome/Android) + fallback iOS ═══
-let _scanRaf = null;
-let _scanStream = null;
-let _barcodeDetector = null;
-
+// ═══ SCANNER – Quagga2 (iOS Safari + Android Chrome + tutto) ═══
 function startScanner() {
   if (scanning) return;
   resetScanUI();
-  const lbl = document.getElementById('scan-lbl');
+  document.getElementById('scan-lbl').textContent = 'Avvio camera…';
 
-  // BarcodeDetector: nativo su Chrome Android ≥83, Chrome Desktop, Edge
-  // Non disponibile su Safari iOS → mostriamo fallback con input file fotocamera
-  if (!('BarcodeDetector' in window)) {
-    lbl.textContent = '📷 Scatta una foto del codice';
-    _showIosFallback();
-    return;
-  }
-
-  lbl.textContent = 'Avvio camera…';
-  const video = document.getElementById('scan-video');
-  const canvas = document.getElementById('scan-canvas');
-  const ctx = canvas.getContext('2d');
-
-  _barcodeDetector = new BarcodeDetector({
-    formats: ['qr_code','ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','data_matrix']
-  });
-
-  navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: false
-  }).then(stream => {
-    _scanStream = stream;
-    video.srcObject = stream;
-    video.play();
-    scanning = true;
-    lbl.textContent = 'Punta il codice a barre';
-
-    async function tick() {
-      if (!scanning) return;
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        try {
-          const codes = await _barcodeDetector.detect(video);
-          if (codes.length > 0) { onCode(codes[0].rawValue); }
-        } catch(e) {}
+  Quagga.init({
+    inputStream: {
+      type: 'LiveStream',
+      target: document.getElementById('scan-video'),
+      constraints: {
+        facingMode: 'environment',
+        width: { min: 640, ideal: 1280 },
+        height: { min: 480, ideal: 720 }
       }
-      _scanRaf = requestAnimationFrame(tick);
+    },
+    decoder: {
+      readers: ['code_128_reader','ean_reader','ean_8_reader','code_39_reader','qr_reader']
+    },
+    locate: true,
+    frequency: 10
+  }, function(err) {
+    if (err) {
+      document.getElementById('scan-lbl').textContent = '❌ Camera non disponibile – controlla i permessi';
+      return;
     }
-    _scanRaf = requestAnimationFrame(tick);
-  }).catch(() => {
-    lbl.textContent = '❌ Permesso camera negato – usa il campo manuale sotto';
+    Quagga.start();
+    scanning = true;
+    document.getElementById('scan-lbl').textContent = 'Punta il codice a barre';
+
+    // Stile video interno generato da Quagga
+    const v = document.querySelector('#scan-video video');
+    if (v) { v.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;'; }
+    const c = document.querySelector('#scan-video canvas');
+    if (c) { c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;'; }
   });
-}
 
-function _showIosFallback() {
-  // Su iOS/Safari: input type=file con capture=environment
-  const box = document.getElementById('scan-video');
-  box.innerHTML = '';
-  box.style.background = '#111';
-  box.style.display = 'flex';
-  box.style.flexDirection = 'column';
-  box.style.alignItems = 'center';
-  box.style.justifyContent = 'center';
-  box.style.gap = '12px';
-  box.style.minHeight = '160px';
-
-  const lbl2 = document.createElement('div');
-  lbl2.style.cssText = 'color:#aaa;font-size:13px;text-align:center;padding:0 16px;';
-  lbl2.textContent = 'Il tuo browser non supporta lo scanner live. Usa il campo barcode manuale qui sotto oppure inserisci il codice articolo a mano.';
-  box.appendChild(lbl2);
-
-  scanning = false; // non in scanning attivo, ma interfaccia aperta
+  Quagga.onDetected(function(result) {
+    const code = result && result.codeResult && result.codeResult.code;
+    if (code) onCode(code);
+  });
 }
 
 function stopScanner() {
-  if (_scanRaf) { cancelAnimationFrame(_scanRaf); _scanRaf = null; }
-  if (_scanStream) { _scanStream.getTracks().forEach(t => t.stop()); _scanStream = null; }
-  const video = document.getElementById('scan-video');
-  if (video) { video.srcObject = null; video.innerHTML = ''; video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;'; }
+  if (!scanning) return;
   scanning = false;
-  _barcodeDetector = null;
+  try { Quagga.offDetected(); Quagga.stop(); } catch(e) {}
+  const box = document.getElementById('scan-video');
+  if (box) box.innerHTML = '';
 }
 
 function resetScanUI() {
