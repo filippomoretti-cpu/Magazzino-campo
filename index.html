@@ -337,7 +337,16 @@ html, body {
   border-radius: var(--r); border: 2px solid var(--yellow);
   overflow: hidden; aspect-ratio: 4/3; flex-shrink: 0;
 }
-#scan-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+#scan-video { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: var(--r); }
+#scan-canvas { display: none; }
+#scan-file-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; width: 100%; height: 100%; background: var(--bg2);
+  cursor: pointer; border: none; color: var(--fg); font-family: inherit;
+}
+#scan-file-btn .sf-icon { font-size: 48px; }
+#scan-file-btn .sf-label { font-size: 14px; font-weight: 600; color: var(--yellow); }
+#scan-file-btn .sf-sub { font-size: 11px; color: var(--fg2); }
 .scan-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .scan-frame { width: 200px; height: 100px; position: relative; }
 .sfc { position: absolute; width: 20px; height: 20px; border-color: var(--yellow); border-style: solid; }
@@ -439,7 +448,7 @@ html, body {
 </style>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.4/dist/quagga.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 
 <!-- ══ LOGIN ══ -->
 <div id="screen-login">
@@ -564,7 +573,14 @@ html, body {
     <div class="view" id="view-scan">
       <div class="scan-body">
         <div class="scanner-box">
-          <div id="scan-video" style="width:100%;height:100%;position:relative;"></div>
+          <video id="scan-video" autoplay playsinline muted style="display:none;width:100%;height:100%;object-fit:cover;"></video>
+          <canvas id="scan-canvas"></canvas>
+          <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;" onchange="scanFileImage(this)">
+          <button id="scan-file-btn" onclick="document.getElementById('scan-file-input').click()" style="display:none;">
+            <span class="sf-icon">📷</span>
+            <span class="sf-label">Scatta foto al barcode</span>
+            <span class="sf-sub">Tocca per aprire la fotocamera</span>
+          </button>
           <div class="scan-overlay">
             <div class="scan-frame">
               <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
@@ -1208,55 +1224,169 @@ function stepOp(d){ opQty=Math.max(1,opQty+d); document.getElementById('op-qty')
 function opPrel(){ const a=articoli.find(x=>x.id===opId); if(a){mov(a,-opQty,'prelievo');} closeM('m-op'); renderHome(); }
 function opCar(){  const a=articoli.find(x=>x.id===opId); if(a){mov(a,+opQty,'carico');}  closeM('m-op'); renderHome(); }
 
-// ═══ SCANNER – Quagga2 (iOS Safari + Android Chrome + tutto) ═══
+// ═══ SCANNER – Soluzione definitiva iOS + Android ═══
+// iOS Safari: input file capture (fotocamera nativa) + jsQR su immagine
+// Android Chrome: getUserMedia streaming + jsQR su canvas
+// Fallback: input manuale sempre disponibile
+
+let scanStream = null;
+let scanAnimFrame = null;
+let scanCtx = null;
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 function startScanner() {
   if (scanning) return;
   resetScanUI();
-  document.getElementById('scan-lbl').textContent = 'Avvio camera…';
 
-  Quagga.init({
-    inputStream: {
-      type: 'LiveStream',
-      target: document.getElementById('scan-video'),
-      constraints: {
-        facingMode: 'environment',
-        width: { min: 640, ideal: 1280 },
-        height: { min: 480, ideal: 720 }
-      }
-    },
-    decoder: {
-      readers: ['code_128_reader','ean_reader','ean_8_reader','code_39_reader','qr_reader']
-    },
-    locate: true,
-    frequency: 10
-  }, function(err) {
-    if (err) {
-      document.getElementById('scan-lbl').textContent = '❌ Camera non disponibile – controlla i permessi';
-      return;
+  if (isIOS()) {
+    _startIOSScanner();
+  } else {
+    _startStreamScanner();
+  }
+}
+
+function _startIOSScanner() {
+  // iOS: usa input file con capture="environment"
+  // La fotocamera nativa iOS legge già i barcode — poi decodifico con jsQR
+  scanning = true;
+  const vid = document.getElementById('scan-video');
+  const fileBtn = document.getElementById('scan-file-btn');
+  const lbl = document.getElementById('scan-lbl');
+
+  vid.style.display = 'none';
+  fileBtn.style.display = 'flex';
+  lbl.textContent = 'Tocca il pulsante per scansionare';
+}
+
+function _startStreamScanner() {
+  // Android / Desktop: getUserMedia streaming con jsQR su canvas
+  const lbl = document.getElementById('scan-lbl');
+  lbl.textContent = 'Avvio camera…';
+
+  const constraints = {
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
     }
-    Quagga.start();
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    scanStream = stream;
     scanning = true;
-    document.getElementById('scan-lbl').textContent = 'Punta il codice a barre';
 
-    // Stile video interno generato da Quagga
-    const v = document.querySelector('#scan-video video');
-    if (v) { v.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;'; }
-    const c = document.querySelector('#scan-video canvas');
-    if (c) { c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;'; }
-  });
+    const vid = document.getElementById('scan-video');
+    vid.srcObject = stream;
+    vid.style.display = 'block';
+    document.getElementById('scan-file-btn').style.display = 'none';
+    lbl.textContent = 'Punta il codice a barre';
 
-  Quagga.onDetected(function(result) {
-    const code = result && result.codeResult && result.codeResult.code;
-    if (code) onCode(code);
+    vid.onloadedmetadata = function() {
+      vid.play();
+      _startScanLoop();
+    };
+  }).catch(function(err) {
+    console.warn('getUserMedia fallback iOS file:', err);
+    // Fallback: usa il metodo iOS anche su Android se la camera non parte
+    _startIOSScanner();
+    document.getElementById('scan-lbl').textContent = '📷 Scatta foto al barcode';
   });
+}
+
+function _startScanLoop() {
+  const vid = document.getElementById('scan-video');
+  const canvas = document.getElementById('scan-canvas');
+  if (!vid || !canvas) return;
+
+  canvas.width = vid.videoWidth || 640;
+  canvas.height = vid.videoHeight || 480;
+  scanCtx = canvas.getContext('2d');
+
+  function tick() {
+    if (!scanning) return;
+    if (vid.readyState === vid.HAVE_ENOUGH_DATA) {
+      canvas.width = vid.videoWidth;
+      canvas.height = vid.videoHeight;
+      scanCtx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+      const imgData = scanCtx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imgData.data, imgData.width, imgData.height, {
+        inversionAttempts: 'dontInvert'
+      });
+      if (result && result.data) {
+        onCode(result.data);
+      }
+    }
+    scanAnimFrame = requestAnimationFrame(tick);
+  }
+  scanAnimFrame = requestAnimationFrame(tick);
+}
+
+// Chiamato quando l'utente scatta la foto (iOS / fallback)
+function scanFileImage(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  document.getElementById('scan-lbl').textContent = 'Analisi immagine…';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.getElementById('scan-canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imgData.data, imgData.width, imgData.height, {
+        inversionAttempts: 'dontInvert'
+      });
+      if (result && result.data) {
+        onCode(result.data);
+        document.getElementById('scan-lbl').textContent = '✅ ' + result.data;
+      } else {
+        // Prova anche con inversione (barcode scuri su sfondo chiaro)
+        const result2 = jsQR(imgData.data, imgData.width, imgData.height, {
+          inversionAttempts: 'onlyInvert'
+        });
+        if (result2 && result2.data) {
+          onCode(result2.data);
+          document.getElementById('scan-lbl').textContent = '✅ ' + result2.data;
+        } else {
+          document.getElementById('scan-lbl').textContent = '⚠️ Codice non letto – riprova più vicino';
+        }
+      }
+      // Reset input per permettere di scansionare di nuovo
+      input.value = '';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function stopScanner() {
   if (!scanning) return;
   scanning = false;
-  try { Quagga.offDetected(); Quagga.stop(); } catch(e) {}
-  const box = document.getElementById('scan-video');
-  if (box) box.innerHTML = '';
+
+  // Ferma stream camera
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  if (scanAnimFrame) {
+    cancelAnimationFrame(scanAnimFrame);
+    scanAnimFrame = null;
+  }
+
+  const vid = document.getElementById('scan-video');
+  if (vid) { vid.srcObject = null; vid.style.display = 'none'; }
+  const fileBtn = document.getElementById('scan-file-btn');
+  if (fileBtn) fileBtn.style.display = 'none';
+  const canvas = document.getElementById('scan-canvas');
+  if (canvas) { canvas.width = 0; canvas.height = 0; }
 }
 
 function resetScanUI() {
