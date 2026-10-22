@@ -1425,13 +1425,9 @@ function _showScanConfirm(a, delta) {
       conf.classList.remove('hide');
       conf.style.display='none'; conf.style.display='';
       lastCode = '';
-      // Su iOS: re-presenta il pulsante foto subito per il prossimo articolo
-      // Se siamo in modalità foto (no video attivo) re-mostra pulsante
-      var vid = document.getElementById('scan-video');
-      if (scanning && (!vid || vid.style.display === 'none')) {
-        document.getElementById('scan-lbl').textContent = '📷 Tocca per scansionare il prossimo';
-        document.getElementById('scan-file-btn').style.display = 'block';
-      }
+      // Torna alla home e ferma lo scanner
+      stopScanner();
+      showPage('home');
     }, 220);
   }, 1600);
 }
