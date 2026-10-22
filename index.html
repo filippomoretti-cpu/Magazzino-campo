@@ -598,7 +598,7 @@ html, body {
           <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;" onchange="scanFileImage(this)">
           <button id="scan-file-btn" onclick="document.getElementById('scan-file-input').click()" style="display:none;">
             <span class="sf-icon">📷</span>
-            <span class="sf-label">Scatta foto al barcode</span>
+            <span class="sf-label">Scatta foto al QR code</span>
             <span class="sf-sub">Tocca per aprire la fotocamera</span>
           </button>
           <div class="scan-overlay">
@@ -1286,6 +1286,12 @@ function startScanner() {
 
   document.getElementById('scan-lbl').textContent = 'Avvio camera…';
 
+  // Su iOS: vai diretto alla modalità foto — è l'unica che funziona in modo affidabile
+  if (isIOS()) {
+    _showFileMode('📷 Tocca per scansionare il QR');
+    return;
+  }
+
   navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
   }).then(function(stream) {
@@ -1298,12 +1304,10 @@ function startScanner() {
 
     vid.addEventListener('loadedmetadata', function() {
       vid.play().then(function() {
-        // Prova BarcodeDetector nativo (iOS 16+ Safari e Chrome moderno)
         if ('BarcodeDetector' in window) {
           document.getElementById('scan-lbl').textContent = '📷 Inquadra il codice';
           _startNativeLoop(vid);
         } else {
-          // Fallback: jsQR su canvas (solo QR code)
           document.getElementById('scan-lbl').textContent = '📷 Inquadra il QR code';
           _startScanLoop();
         }
@@ -1313,7 +1317,6 @@ function startScanner() {
       });
     }, { once: true });
 
-    // Dopo 5s senza lettura mostra anche pulsante foto come alternativa
     setTimeout(function() {
       if (scanning && scanTries < 5) {
         document.getElementById('scan-file-btn').style.display = 'flex';
@@ -1514,8 +1517,12 @@ function _showScanConfirm(a, delta) {
     setTimeout(function(){
       conf.classList.remove('hide');
       conf.style.display='none'; conf.style.display='';
-      // Sblocca subito (lastCode torna vuoto così il prossimo codice passa)
       lastCode = '';
+      // Su iOS: re-presenta il pulsante foto subito per il prossimo articolo
+      if (isIOS() && scanning) {
+        document.getElementById('scan-lbl').textContent = '📷 Tocca per scansionare il prossimo';
+        document.getElementById('scan-file-btn').style.display = 'flex';
+      }
     }, 220);
   }, 1600);
 }
