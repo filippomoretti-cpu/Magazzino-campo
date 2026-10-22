@@ -525,6 +525,11 @@ html, body {
   </div>
 </div>
 
+<!-- Input file scanner — fuori da ogni container per iOS compatibility -->
+<input type="file" id="scan-file-input" accept="image/*" capture="environment"
+  style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;"
+  onchange="scanFileImage(this)">
+
 <!-- ══ APP ══ -->
 <div id="app">
   <!-- TOPBAR -->
@@ -598,12 +603,11 @@ html, body {
         <div class="scanner-box">
           <video id="scan-video" autoplay playsinline muted style="display:none;width:100%;height:100%;object-fit:cover;"></video>
           <canvas id="scan-canvas"></canvas>
-          <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;" onchange="scanFileImage(this)">
-          <label id="scan-file-btn" for="scan-file-input" style="display:none;">
+          <div id="scan-file-btn" style="display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:100%;height:100%;background:var(--bg2);cursor:pointer;" onclick="triggerScanFile()">
             <span class="sf-icon">📷</span>
             <span class="sf-label">Scatta foto al QR code</span>
             <span class="sf-sub">Tocca per aprire la fotocamera</span>
-          </label>
+          </div>
           <div class="scan-overlay">
             <div class="scan-frame">
               <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
@@ -1448,6 +1452,21 @@ function resetScanUI() {
   document.getElementById('scan-nf').classList.remove('show');
   document.getElementById('sc-qty').textContent='1';
   document.getElementById('manual-in').value='';
+}
+
+function triggerScanFile() {
+  // Crea un input fresco nel body ad ogni tap — tecnica più affidabile su iOS Safari
+  const old = document.getElementById('scan-file-input');
+  if (old) old.remove();
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.id = 'scan-file-input';
+  inp.accept = 'image/*';
+  inp.setAttribute('capture', 'environment');
+  inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;';
+  inp.addEventListener('change', function(){ scanFileImage(inp); });
+  document.body.appendChild(inp);
+  inp.click();
 }
 
 function manualScan() {
