@@ -525,11 +525,6 @@ html, body {
   </div>
 </div>
 
-<!-- Input file scanner — fuori da ogni container per iOS compatibility -->
-<input type="file" id="scan-file-input" accept="image/*" capture="environment"
-  style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;"
-  onchange="scanFileImage(this)">
-
 <!-- ══ APP ══ -->
 <div id="app">
   <!-- TOPBAR -->
@@ -600,14 +595,9 @@ html, body {
     <!-- SCANNER -->
     <div class="view" id="view-scan">
       <div class="scan-body">
-        <div class="scanner-box">
+        <div class="scanner-box" id="scanner-box">
           <video id="scan-video" autoplay playsinline muted style="display:none;width:100%;height:100%;object-fit:cover;"></video>
-          <canvas id="scan-canvas"></canvas>
-          <div id="scan-file-btn" style="display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:100%;height:100%;background:var(--bg2);cursor:pointer;" onclick="triggerScanFile()">
-            <span class="sf-icon">📷</span>
-            <span class="sf-label">Scatta foto al QR code</span>
-            <span class="sf-sub">Tocca per aprire la fotocamera</span>
-          </div>
+          <canvas id="scan-canvas" style="display:none;"></canvas>
           <div class="scan-overlay">
             <div class="scan-frame">
               <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
@@ -617,6 +607,13 @@ html, body {
           </div>
           <div class="scan-lbl" id="scan-lbl">Avvio camera…</div>
         </div>
+        <!-- Pulsante foto — fuori dal scanner-box, visibile direttamente -->
+        <label id="scan-file-btn" style="display:none;margin-top:8px;padding:18px;background:var(--bg2);border-radius:var(--r);text-align:center;cursor:pointer;border:2px dashed var(--yellow);color:var(--fg);" for="scan-file-input">
+          <div style="font-size:40px;margin-bottom:6px;">📷</div>
+          <div style="font-size:15px;font-weight:700;color:var(--yellow);">Tocca per aprire la fotocamera</div>
+          <div style="font-size:11px;color:var(--fg2);margin-top:4px;">Inquadra il codice a barre</div>
+        </label>
+        <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;" onchange="scanFileImage(this)">
         <div class="manual-row">
           <input type="text" id="manual-in" placeholder="Inserisci barcode manualmente…">
           <button class="btn btn-y" onclick="manualScan()" style="flex:0;padding:0 16px;">OK</button>
@@ -1270,11 +1267,11 @@ function stepOp(d){ opQty=Math.max(1,opQty+d); document.getElementById('op-qty')
 function opPrel(){ const a=articoli.find(x=>x.id===opId); if(a){mov(a,-opQty,'prelievo');} closeM('m-op'); renderHome(); }
 function opCar(){  const a=articoli.find(x=>x.id===opId); if(a){mov(a,+opQty,'carico');}  closeM('m-op'); renderHome(); }
 
-// ═══ SCANNER – QR code: streaming su Android, foto su iOS ═══
+// ═══ SCANNER ═══
 let scanStream = null;
 let scanAnimFrame = null;
-let scanCtx = null;
 let scanTries = 0;
+let nativeDetector = null;
 
 function isIOS() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -1285,97 +1282,71 @@ function startScanner() {
   if (scanning) return;
   resetScanUI();
   scanTries = 0;
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    _showFileMode('📷 Tocca per scansionare');
-    return;
-  }
-
   document.getElementById('scan-lbl').textContent = 'Avvio camera…';
+  document.getElementById('scan-file-btn').style.display = 'none';
 
-  // Su iOS: vai diretto alla modalità foto — è l'unica che funziona in modo affidabile
-  if (isIOS()) {
-    _showFileMode('📷 Tocca per scansionare il QR');
+  // Prova sempre getUserMedia — funziona su iOS 15+ Safari e tutti gli Android
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _showFileMode();
     return;
   }
 
   navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    video: { facingMode: { ideal:'environment' }, width:{ideal:1280}, height:{ideal:720} }
   }).then(function(stream) {
     scanStream = stream;
     scanning = true;
-    const vid = document.getElementById('scan-video');
+    var vid = document.getElementById('scan-video');
     vid.srcObject = stream;
     vid.style.display = 'block';
-    document.getElementById('scan-file-btn').style.display = 'none';
 
     vid.addEventListener('loadedmetadata', function() {
-      vid.play().then(function() {
-        if ('BarcodeDetector' in window) {
-          document.getElementById('scan-lbl').textContent = '📷 Inquadra il codice';
-          _startNativeLoop(vid);
-        } else {
-          document.getElementById('scan-lbl').textContent = '📷 Inquadra il QR code';
-          _startScanLoop();
-        }
-      }).catch(function() {
-        if ('BarcodeDetector' in window) { _startNativeLoop(vid); }
-        else { _startScanLoop(); }
-      });
-    }, { once: true });
-
-    setTimeout(function() {
-      if (scanning && scanTries < 5) {
-        document.getElementById('scan-file-btn').style.display = 'flex';
-        document.getElementById('scan-lbl').textContent = '📷 Inquadra il codice · o scatta foto';
+      vid.play().catch(function(){});
+      // BarcodeDetector nativo: legge EAN13, CODE128, QR, ecc.
+      if ('BarcodeDetector' in window) {
+        document.getElementById('scan-lbl').textContent = '📷 Inquadra il codice';
+        _startNativeLoop(vid);
+      } else {
+        // jsQR come fallback (solo QR code)
+        document.getElementById('scan-lbl').textContent = '📷 Inquadra il QR code';
+        _startJsQRLoop(vid);
       }
-    }, 5000);
-  }).catch(function() {
-    _showFileMode('📷 Tocca per scansionare');
+    }, {once:true});
+
+  }).catch(function(err) {
+    // getUserMedia negato o non disponibile → pulsante foto
+    _showFileMode();
   });
 }
 
-// BarcodeDetector nativo: iOS 16+ Safari, Chrome 88+, Android Chrome
-let nativeDetector = null;
 function _startNativeLoop(vid) {
-  BarcodeDetector.getSupportedFormats().then(function(formats) {
-    const wanted = ['qr_code','code_128','ean_13','ean_8','code_39','data_matrix'].filter(f => formats.includes(f));
-    nativeDetector = new BarcodeDetector({ formats: wanted.length ? wanted : ['qr_code','code_128'] });
-
-    function tick() {
-      if (!scanning) return;
-      nativeDetector.detect(vid).then(function(barcodes) {
-        if (barcodes && barcodes.length > 0) {
-          const code = barcodes[0].rawValue;
-          if (code) { onCode(code); scanAnimFrame = setTimeout(tick, 1800); return; }
-        }
+  var formats = ['ean_13','ean_8','code_128','code_39','qr_code','data_matrix','upc_a','upc_e'];
+  try {
+    nativeDetector = new BarcodeDetector({ formats: formats });
+  } catch(e) {
+    nativeDetector = new BarcodeDetector();
+  }
+  function tick() {
+    if (!scanning) return;
+    nativeDetector.detect(vid).then(function(results) {
+      if (results && results.length > 0 && results[0].rawValue) {
+        onCode(results[0].rawValue);
+        scanAnimFrame = setTimeout(tick, 1800);
+      } else {
         scanTries++;
-        scanAnimFrame = setTimeout(tick, 200); // rileva ogni 200ms
-      }).catch(function() {
-        scanTries++;
-        scanAnimFrame = setTimeout(tick, 200);
-      });
-    }
-    tick();
-  }).catch(function() {
-    // BarcodeDetector presente ma getSupportedFormats fallisce → jsQR
-    _startScanLoop();
-  });
+        scanAnimFrame = setTimeout(tick, 150);
+      }
+    }).catch(function() {
+      scanTries++;
+      scanAnimFrame = setTimeout(tick, 150);
+    });
+  }
+  tick();
 }
 
-function _showFileMode(msg) {
-  scanning = true;
-  document.getElementById('scan-video').style.display = 'none';
-  document.getElementById('scan-file-btn').style.display = 'flex';
-  document.getElementById('scan-lbl').textContent = msg || '📷 Scatta foto al QR code';
-}
-
-function _startScanLoop() {
-  const vid = document.getElementById('scan-video');
-  const canvas = document.getElementById('scan-canvas');
-  if (!vid || !canvas || !scanning) return;
-  const ctx = canvas.getContext('2d');
-
+function _startJsQRLoop(vid) {
+  var canvas = document.getElementById('scan-canvas');
+  var ctx = canvas.getContext('2d');
   function tick() {
     if (!scanning) return;
     try {
@@ -1383,9 +1354,13 @@ function _startScanLoop() {
         canvas.width = vid.videoWidth;
         canvas.height = vid.videoHeight;
         ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const qr = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
-        if (qr && qr.data) { onCode(qr.data); scanAnimFrame = requestAnimationFrame(tick); return; }
+        var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var qr = jsQR(imgData.data, imgData.width, imgData.height);
+        if (qr && qr.data) {
+          onCode(qr.data);
+          scanAnimFrame = setTimeout(function(){ scanAnimFrame = requestAnimationFrame(tick); }, 1800);
+          return;
+        }
         scanTries++;
       }
     } catch(e) {}
@@ -1394,37 +1369,69 @@ function _startScanLoop() {
   scanAnimFrame = requestAnimationFrame(tick);
 }
 
-// iOS / fallback: analizza foto scattata
+function _showFileMode() {
+  scanning = true;
+  document.getElementById('scan-video').style.display = 'none';
+  document.getElementById('scan-file-btn').style.display = 'block';
+  document.getElementById('scan-lbl').textContent = '📷 Usa la fotocamera per scansionare';
+}
+
+// Analisi foto scattata (fallback)
 function scanFileImage(input) {
-  const file = input.files && input.files[0];
+  var file = input.files && input.files[0];
   if (!file) return;
-  document.getElementById('scan-lbl').textContent = '🔍 Analisi…';
-  const url = URL.createObjectURL(file);
-  const img = new Image();
+  document.getElementById('scan-lbl').textContent = '🔍 Analisi in corso…';
+
+  // Prova BarcodeDetector sull'immagine prima di jsQR
+  if ('BarcodeDetector' in window) {
+    createImageBitmap(file).then(function(bitmap) {
+      var det;
+      try { det = new BarcodeDetector({ formats:['ean_13','ean_8','code_128','code_39','qr_code','data_matrix','upc_a','upc_e'] }); }
+      catch(e) { det = new BarcodeDetector(); }
+      return det.detect(bitmap);
+    }).then(function(results) {
+      if (results && results.length > 0 && results[0].rawValue) {
+        onCode(results[0].rawValue);
+      } else {
+        _scanFileWithJsQR(file);
+      }
+      input.value = '';
+    }).catch(function() {
+      _scanFileWithJsQR(file);
+      input.value = '';
+    });
+    return;
+  }
+  _scanFileWithJsQR(file);
+  input.value = '';
+}
+
+function _scanFileWithJsQR(file) {
+  var url = URL.createObjectURL(file);
+  var img = new Image();
   img.onload = function() {
-    const canvas = document.getElementById('scan-canvas');
-    const ctx = canvas.getContext('2d');
-    // Ridimensiona se troppo grande (risparmia memoria, jsQR è più veloce)
-    const MAX = 1200;
-    let w = img.naturalWidth, h = img.naturalHeight;
-    if (w > MAX || h > MAX) { const r = MAX / Math.max(w,h); w = Math.round(w*r); h = Math.round(h*r); }
+    var canvas = document.getElementById('scan-canvas');
+    var ctx = canvas.getContext('2d');
+    var MAX = 1400;
+    var w = img.naturalWidth, h = img.naturalHeight;
+    if (w > MAX || h > MAX) { var r = MAX/Math.max(w,h); w=Math.round(w*r); h=Math.round(h*r); }
     canvas.width = w; canvas.height = h;
     ctx.drawImage(img, 0, 0, w, h);
     URL.revokeObjectURL(url);
-    const imgData = ctx.getImageData(0, 0, w, h);
-    let qr = jsQR(imgData.data, w, h, { inversionAttempts: 'dontInvert' });
-    if (!qr) qr = jsQR(imgData.data, w, h, { inversionAttempts: 'onlyInvert' });
+    var imgData = ctx.getImageData(0,0,w,h);
+    var qr = jsQR(imgData.data, w, h);
+    if (!qr) qr = jsQR(imgData.data, w, h, {inversionAttempts:'onlyInvert'});
     if (qr && qr.data) {
       onCode(qr.data);
     } else {
-      document.getElementById('scan-lbl').textContent = '⚠️ QR non trovato – avvicinati e riprova';
+      document.getElementById('scan-lbl').textContent = '⚠️ Codice non trovato – riprova più vicino';
+      // Re-mostra pulsante foto subito
+      document.getElementById('scan-file-btn').style.display = 'block';
     }
-    input.value = '';
   };
   img.onerror = function() {
     URL.revokeObjectURL(url);
-    document.getElementById('scan-lbl').textContent = '❌ Errore immagine';
-    input.value = '';
+    document.getElementById('scan-lbl').textContent = '❌ Errore lettura immagine';
   };
   img.src = url;
 }
@@ -1433,17 +1440,12 @@ function stopScanner() {
   if (!scanning) return;
   scanning = false;
   nativeDetector = null;
-
-  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
-  // cancella sia requestAnimationFrame che setTimeout (native loop usa setTimeout)
+  if (scanStream) { scanStream.getTracks().forEach(function(t){t.stop();}); scanStream = null; }
   if (scanAnimFrame) { cancelAnimationFrame(scanAnimFrame); clearTimeout(scanAnimFrame); scanAnimFrame = null; }
-
-  const vid = document.getElementById('scan-video');
+  var vid = document.getElementById('scan-video');
   if (vid) { vid.srcObject = null; vid.style.display = 'none'; }
-  const fileBtn = document.getElementById('scan-file-btn');
-  if (fileBtn) fileBtn.style.display = 'none';
-  const canvas = document.getElementById('scan-canvas');
-  if (canvas) { canvas.width = 0; canvas.height = 0; }
+  var fb = document.getElementById('scan-file-btn');
+  if (fb) fb.style.display = 'none';
 }
 
 function resetScanUI() {
@@ -1452,21 +1454,6 @@ function resetScanUI() {
   document.getElementById('scan-nf').classList.remove('show');
   document.getElementById('sc-qty').textContent='1';
   document.getElementById('manual-in').value='';
-}
-
-function triggerScanFile() {
-  // Crea un input fresco nel body ad ogni tap — tecnica più affidabile su iOS Safari
-  const old = document.getElementById('scan-file-input');
-  if (old) old.remove();
-  const inp = document.createElement('input');
-  inp.type = 'file';
-  inp.id = 'scan-file-input';
-  inp.accept = 'image/*';
-  inp.setAttribute('capture', 'environment');
-  inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;';
-  inp.addEventListener('change', function(){ scanFileImage(inp); });
-  document.body.appendChild(inp);
-  inp.click();
 }
 
 function manualScan() {
@@ -1541,9 +1528,11 @@ function _showScanConfirm(a, delta) {
       conf.style.display='none'; conf.style.display='';
       lastCode = '';
       // Su iOS: re-presenta il pulsante foto subito per il prossimo articolo
-      if (isIOS() && scanning) {
+      // Se siamo in modalità foto (no video attivo) re-mostra pulsante
+      var vid = document.getElementById('scan-video');
+      if (scanning && (!vid || vid.style.display === 'none')) {
         document.getElementById('scan-lbl').textContent = '📷 Tocca per scansionare il prossimo';
-        document.getElementById('scan-file-btn').style.display = 'flex';
+        document.getElementById('scan-file-btn').style.display = 'block';
       }
     }, 220);
   }, 1600);
