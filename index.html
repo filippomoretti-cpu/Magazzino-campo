@@ -1318,10 +1318,17 @@ function startScanner() {
 function stopScanner() {
   if (!scanning) return;
   scanning = false;
-  try { if (zxingReader) { zxingReader.reset(); zxingReader = null; } } catch(e) {}
+  try {
+    if (zxingReader) { zxingReader.reset(); zxingReader = null; }
+  } catch(e) {}
   scanStream = null;
   var vid = document.getElementById('scan-video');
-  if (vid) { vid.srcObject = null; vid.style.display = 'none'; }
+  if (vid) {
+    // Ferma tutti i track video
+    try { if(vid.srcObject){ vid.srcObject.getTracks().forEach(function(t){t.stop();}); } } catch(e){}
+    vid.srcObject = null;
+    vid.style.display = 'none';
+  }
   var fb = document.getElementById('scan-file-btn');
   if (fb) fb.style.display = 'none';
 }
@@ -1363,6 +1370,9 @@ function onCode(code) {
   const now=Date.now();
   if(code===lastCode && now-lastScanTs<2500)return;
   lastCode=code; lastScanTs=now;
+
+  // Ferma subito ZXing — evita callback multipli
+  try { if(zxingReader){ zxingReader.reset(); } } catch(e){}
 
   const a=articoli.find(x=>x.id===code || x.barcode===code);
   if(a){
