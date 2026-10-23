@@ -35,6 +35,11 @@ html, body {
   color: var(--fg);
   -webkit-text-size-adjust: 100%;
   overflow: hidden;
+  touch-action: pan-x pan-y;
+}
+/* Blocca zoom su doppio tap per tutti i bottoni e input */
+button, input, select, textarea, a, label {
+  touch-action: manipulation;
 }
 
 #app {
@@ -863,6 +868,16 @@ document.addEventListener('touchmove', function(e){
 // ═══ STATO ═══
 let articoli = [], storico = [], cfg = { tel:'', key:'' };
 let managerPin = '1234';
+// Blocca doppio-tap zoom su iOS Safari (fallback per browser più vecchi)
+(function() {
+  var lastTap = 0;
+  document.addEventListener('touchend', function(e) {
+    var now = Date.now();
+    if (now - lastTap < 300) { e.preventDefault(); }
+    lastTap = now;
+  }, { passive: false });
+})();
+
 let role = null; // 'utente' | 'manager'
 let pinBuffer = '';
 let editId = null, opId = null, scanId = null;
