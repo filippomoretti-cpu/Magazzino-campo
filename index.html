@@ -818,6 +818,7 @@ button, input, select, textarea, a, label {
 <div class="overlay hidden" id="m-op">
   <div class="modal">
     <div class="modal-handle"></div>
+    <div id="m-op-icon" style="font-size:64px;line-height:1;text-align:center;margin-bottom:6px;"></div>
     <div class="modal-title" id="m-op-nome"></div>
     <div style="color:var(--fg2);font-size:13px;margin-bottom:14px;" id="m-op-stock"></div>
     <div class="qty-step">
@@ -1269,7 +1270,8 @@ function delArt() {
 function openOpModal(id) {
   opId=id; opQty=1;
   const a=articoli.find(x=>x.id===id); if(!a)return;
-  document.getElementById('m-op-nome').textContent=emojiHtml(a)+' '+a.nome+(a.modello?' · '+a.modello:'');
+  document.getElementById('m-op-icon').innerHTML = emojiHtml(a);
+  document.getElementById('m-op-nome').textContent = a.nome+(a.modello?' · '+a.modello:'');
   document.getElementById('m-op-stock').textContent=`Giacenza: ${a.qty} ${a.unita||'pz'} · Soglia: ${a.soglia}`;
   document.getElementById('op-qty').textContent='1';
   document.getElementById('m-op').classList.remove('hidden');
