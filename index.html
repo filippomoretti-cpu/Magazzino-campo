@@ -641,7 +641,7 @@ button, input, select, textarea, a, label {
             background:var(--ok-bg);border:2px solid var(--ok);border-radius:20px;
             padding:24px 32px;text-align:center;max-width:280px;width:90%;
             transform:scale(0.7);opacity:0;transition:transform .25s cubic-bezier(.34,1.56,.64,1),opacity .2s;">
-            <div id="sc-art-icon" style="font-size:72px;line-height:1;margin-bottom:12px;"></div>
+            <div id="sc-art-icon" style="font-size:96px;line-height:1;margin-bottom:12px;"></div>
             <div id="sc-nome-conf" style="font-size:16px;font-weight:800;color:var(--fg);margin-bottom:4px;"></div>
             <div id="sc-qty-conf" style="font-size:22px;font-weight:900;color:var(--ok);margin-bottom:4px;"></div>
             <div id="sc-rim-conf" style="font-size:13px;color:var(--fg2);"></div>
@@ -1382,7 +1382,7 @@ function _showScanConfirm(a, delta) {
       stopScanner();
       nav('home');
     }, 200);
-  }, 2000);
+  }, 2500);
 }
 
 function stepSc(d){ scanQty=Math.max(1,scanQty+d); document.getElementById('sc-qty').textContent=scanQty; }
