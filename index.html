@@ -641,7 +641,8 @@ button, input, select, textarea, a, label {
             background:var(--ok-bg);border:2px solid var(--ok);border-radius:20px;
             padding:24px 32px;text-align:center;max-width:280px;width:90%;
             transform:scale(0.7);opacity:0;transition:transform .25s cubic-bezier(.34,1.56,.64,1),opacity .2s;">
-            <div id="sc-check" style="font-size:56px;line-height:1;margin-bottom:8px;">✅</div>
+            <div id="sc-check" style="width:72px;height:72px;border-radius:50%;background:#000;border:2px solid var(--yellow);display:flex;align-items:center;justify-content:center;margin:0 auto 8px;overflow:hidden;"></div>
+            <div id="sc-art-icon" style="font-size:40px;line-height:1;margin-bottom:8px;"></div>
             <div id="sc-nome-conf" style="font-size:16px;font-weight:800;color:var(--fg);margin-bottom:4px;"></div>
             <div id="sc-qty-conf" style="font-size:22px;font-weight:900;color:var(--ok);margin-bottom:4px;"></div>
             <div id="sc-rim-conf" style="font-size:13px;color:var(--fg2);"></div>
@@ -1365,7 +1366,18 @@ function _showScanConfirm(a, delta) {
   document.getElementById('sc-nome-conf').textContent = a.nome + (a.modello ? ' · '+a.modello : '');
   document.getElementById('sc-qty-conf').textContent  = (delta<0?'−':'+')+Math.abs(delta)+' '+(a.unita||'pz');
   document.getElementById('sc-rim-conf').textContent  = 'Rimasto: '+a.qty+' '+(a.unita||'pz');
-  document.getElementById('sc-check').textContent     = a.qty <= a.soglia ? '⚠️' : '✅';
+
+  // Logo nel cerchio
+  var scCheck = document.getElementById('sc-check');
+  var logoImg = document.querySelector('.logo-circle img');
+  if (logoImg) {
+    scCheck.innerHTML = '<img src="'+logoImg.src+'" style="width:100%;height:100%;object-fit:contain;border-radius:50%;">';
+  } else {
+    scCheck.innerHTML = '🐕';
+  }
+
+  // Icona articolo
+  document.getElementById('sc-art-icon').innerHTML = emojiHtml(a);
 
   conf.style.display = '';
   conf.classList.remove('hide');
@@ -1380,7 +1392,7 @@ function _showScanConfirm(a, delta) {
       stopScanner();
       nav('home');
     }, 200);
-  }, 1600);
+  }, 2000);
 }
 
 function stepSc(d){ scanQty=Math.max(1,scanQty+d); document.getElementById('sc-qty').textContent=scanQty; }
