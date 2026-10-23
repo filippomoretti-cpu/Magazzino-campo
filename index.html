@@ -868,12 +868,24 @@ document.addEventListener('touchmove', function(e){
 // ═══ STATO ═══
 let articoli = [], storico = [], cfg = { tel:'', key:'' };
 let managerPin = '1234';
-// Blocca doppio-tap zoom su iOS Safari (fallback per browser più vecchi)
+// ═══ BLOCCO ZOOM iOS Safari — definitivo ═══
 (function() {
+  // 1) Blocca pinch-to-zoom (due dita)
+  document.addEventListener('gesturestart', function(e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener('gesturechange', function(e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener('gestureend', function(e) { e.preventDefault(); }, { passive: false });
+
+  // 2) Blocca touchmove con più di un dito (pinch)
+  document.addEventListener('touchmove', function(e) {
+    if (e.touches.length > 1) { e.preventDefault(); }
+  }, { passive: false });
+
+  // 3) Blocca doppio-tap zoom su TUTTA la pagina
   var lastTap = 0;
   document.addEventListener('touchend', function(e) {
     var now = Date.now();
-    if (now - lastTap < 300) { e.preventDefault(); }
+    var delta = now - lastTap;
+    if (delta < 300 && delta > 0) { e.preventDefault(); }
     lastTap = now;
   }, { passive: false });
 })();
