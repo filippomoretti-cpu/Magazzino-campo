@@ -472,6 +472,7 @@ html, body {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <!-- ══ LOGIN ══ -->
 <div id="screen-login">
@@ -595,25 +596,10 @@ html, body {
     <!-- SCANNER -->
     <div class="view" id="view-scan">
       <div class="scan-body">
-        <div class="scanner-box" id="scanner-box">
-          <video id="scan-video" autoplay playsinline muted style="display:none;width:100%;height:100%;object-fit:cover;"></video>
-          <canvas id="scan-canvas" style="display:none;"></canvas>
-          <div class="scan-overlay">
-            <div class="scan-frame">
-              <div class="sfc sfc-tl"></div><div class="sfc sfc-tr"></div>
-              <div class="sfc sfc-bl"></div><div class="sfc sfc-br"></div>
-              <div class="scan-line"></div>
-            </div>
-          </div>
-          <div class="scan-lbl" id="scan-lbl">Avvio camera…</div>
-        </div>
-        <!-- Pulsante foto — fuori dal scanner-box, visibile direttamente -->
-        <label id="scan-file-btn" style="display:none;margin-top:8px;padding:18px;background:var(--bg2);border-radius:var(--r);text-align:center;cursor:pointer;border:2px dashed var(--yellow);color:var(--fg);" for="scan-file-input">
-          <div style="font-size:40px;margin-bottom:6px;">📷</div>
-          <div style="font-size:15px;font-weight:700;color:var(--yellow);">Tocca per aprire la fotocamera</div>
-          <div style="font-size:11px;color:var(--fg2);margin-top:4px;">Inquadra il codice a barre</div>
-        </label>
-        <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none;" onchange="scanFileImage(this)">
+        <!-- html5-qrcode monta qui il suo video -->
+        <div id="qr-reader" style="width:100%;border-radius:var(--r);overflow:hidden;background:#000;"></div>
+        <div class="scan-lbl" id="scan-lbl" style="text-align:center;padding:8px;font-size:13px;color:var(--fg2);">Avvio camera…</div>
+        <canvas id="scan-canvas" style="display:none;"></canvas>
         <div class="manual-row">
           <input type="text" id="manual-in" placeholder="Inserisci barcode manualmente…">
           <button class="btn btn-y" onclick="manualScan()" style="flex:0;padding:0 16px;">OK</button>
@@ -1267,112 +1253,48 @@ function stepOp(d){ opQty=Math.max(1,opQty+d); document.getElementById('op-qty')
 function opPrel(){ const a=articoli.find(x=>x.id===opId); if(a){mov(a,-opQty,'prelievo');} closeM('m-op'); renderHome(); }
 function opCar(){  const a=articoli.find(x=>x.id===opId); if(a){mov(a,+opQty,'carico');}  closeM('m-op'); renderHome(); }
 
-// ═══ SCANNER — getUserMedia + jsQR loop (iOS Safari compatibile) ═══
-let scanStream = null;
-let scanAnimFrame = null;
-let scanActive = false;
+// ═══ SCANNER — html5-qrcode (iOS Safari + Android, definitivo) ═══
+let h5scanner = null;
 
 function startScanner() {
   if (scanning) return;
+  scanning = true;
   resetScanUI();
   document.getElementById('scan-lbl').textContent = 'Avvio camera…';
-  document.getElementById('scan-file-btn').style.display = 'none';
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    _showFileFallback();
-    return;
-  }
+  // Pulisce il div nel caso ci fosse un'istanza precedente
+  document.getElementById('qr-reader').innerHTML = '';
 
-  navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-  }).then(function(stream) {
-    scanStream = stream;
-    scanning = true;
-    scanActive = true;
-    var vid = document.getElementById('scan-video');
-    vid.srcObject = stream;
-    vid.style.display = 'block';
-    vid.play().catch(function(){});
+  h5scanner = new Html5Qrcode('qr-reader');
+
+  h5scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 220, height: 220 } },
+    function(decodedText) {
+      onCode(decodedText);
+    },
+    function() { /* frame senza codice, ignorato */ }
+  ).then(function() {
     document.getElementById('scan-lbl').textContent = '📷 Inquadra il QR code';
-    _scanLoop(vid);
-  }).catch(function() {
-    _showFileFallback();
+  }).catch(function(err) {
+    scanning = false;
+    document.getElementById('scan-lbl').textContent = '❌ Camera non disponibile: ' + err;
   });
 }
 
-function _scanLoop(vid) {
-  if (!scanActive) return;
-  var canvas = document.getElementById('scan-canvas');
-  var ctx = canvas.getContext('2d');
-
-  function tick() {
-    if (!scanActive) return;
-    if (vid.readyState >= 2 && vid.videoWidth > 0) {
-      canvas.width  = vid.videoWidth;
-      canvas.height = vid.videoHeight;
-      ctx.drawImage(vid, 0, 0);
-      try {
-        var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        var qr  = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-        if (qr && qr.data) {
-          onCode(qr.data);
-          return; // onCode ferma tutto
-        }
-      } catch(e) {}
-    }
-    scanAnimFrame = requestAnimationFrame(tick);
-  }
-  scanAnimFrame = requestAnimationFrame(tick);
-}
-
-function _showFileFallback() {
-  scanning = true;
-  document.getElementById('scan-video').style.display = 'none';
-  document.getElementById('scan-file-btn').style.display = 'block';
-  document.getElementById('scan-lbl').textContent = '📷 Tocca per scansionare';
-}
-
 function stopScanner() {
+  if (!scanning) return;
   scanning = false;
-  scanActive = false;
-  if (scanAnimFrame) { cancelAnimationFrame(scanAnimFrame); scanAnimFrame = null; }
-  if (scanStream) {
-    try { scanStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e){}
-    scanStream = null;
+  if (h5scanner) {
+    h5scanner.stop().then(function() {
+      h5scanner.clear();
+      h5scanner = null;
+      document.getElementById('qr-reader').innerHTML = '';
+    }).catch(function() {
+      h5scanner = null;
+      document.getElementById('qr-reader').innerHTML = '';
+    });
   }
-  var vid = document.getElementById('scan-video');
-  if (vid) { vid.srcObject = null; vid.style.display = 'none'; }
-  var fb = document.getElementById('scan-file-btn');
-  if (fb) fb.style.display = 'none';
-}
-
-// Fallback: foto da file
-function scanFileImage(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  document.getElementById('scan-lbl').textContent = '🔍 Analisi in corso…';
-  var url = URL.createObjectURL(file);
-  var img = new Image();
-  img.onload = function() {
-    var canvas = document.getElementById('scan-canvas');
-    var ctx = canvas.getContext('2d');
-    var MAX = 1600, w = img.naturalWidth, h = img.naturalHeight;
-    if (w > MAX || h > MAX) { var r = MAX / Math.max(w,h); w = Math.round(w*r); h = Math.round(h*r); }
-    canvas.width = w; canvas.height = h;
-    ctx.drawImage(img, 0, 0, w, h);
-    URL.revokeObjectURL(url);
-    var data = ctx.getImageData(0, 0, w, h);
-    var qr = jsQR(data.data, w, h) || jsQR(data.data, w, h, { inversionAttempts: 'onlyInvert' });
-    if (qr && qr.data) {
-      onCode(qr.data);
-    } else {
-      document.getElementById('scan-lbl').textContent = '⚠️ QR non trovato — riprova più vicino';
-      document.getElementById('scan-file-btn').style.display = 'block';
-    }
-    input.value = '';
-  };
-  img.onerror = function() { URL.revokeObjectURL(url); input.value = ''; };
-  img.src = url;
 }
 
 function resetScanUI() {
@@ -1392,9 +1314,8 @@ function onCode(code) {
   if(lastCode === '__blocked__') return;
   lastCode = '__blocked__';
 
-  // Ferma immediatamente il loop di scansione
-  scanActive = false;
-  if (scanAnimFrame) { cancelAnimationFrame(scanAnimFrame); scanAnimFrame = null; }
+  // Ferma immediatamente lo scanner (html5-qrcode)
+  stopScanner();
 
   const a = articoli.find(x => x.id === code || x.barcode === code);
   if (a) {
