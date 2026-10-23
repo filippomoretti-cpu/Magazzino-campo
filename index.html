@@ -696,6 +696,12 @@ html, body {
           <div id="cfg-soglie"></div>
         </div>
 
+        <div class="card" style="margin-bottom:10px;">
+          <div class="card-head">🔔 Soglie Alert</div>
+          <div style="padding:8px 14px 4px;font-size:11px;color:var(--fg2);">Imposta il minimo sotto cui scatta l'alert in home per ogni articolo.</div>
+          <div id="cfg-soglie-edit"></div>
+        </div>
+
         <!-- REPORT -->
         <div class="card" style="margin-bottom:10px;">
           <div class="card-head">📊 Report Magazzino</div>
@@ -1095,13 +1101,6 @@ function renderHome() {
       'Quasi esauriti',
       warn);
   }
-  if (!esauriti.length && !warn.length) {
-    html = `<div class="alert-card ok" style="padding:16px;text-align:center;">
-      <div style="font-size:32px;margin-bottom:6px;">✅</div>
-      <div style="font-weight:800;color:var(--ok);font-size:15px;">Tutto a posto!</div>
-      <div style="font-size:12px;color:var(--fg2);margin-top:3px;">Nessun articolo sotto scorta</div>
-    </div>`;
-  }
   box.innerHTML = html;
 }
 
@@ -1439,6 +1438,29 @@ function renderCfg() {
         </div>
       </div>`).join('')
     : '<div class="empty"><div class="empty-i">📦</div><div class="empty-t">Nessun articolo</div></div>';
+
+  // Soglie alert
+  const el2 = document.getElementById('cfg-soglie-edit');
+  el2.innerHTML = articoli.length
+    ? articoli.map(a=>`
+      <div class="soglia-row">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${emojiHtml(a)}</div>
+          <div>
+            <div style="font-weight:700;font-size:13px;">${a.nome}${a.modello?' <span style="color:var(--fg2);font-weight:400">'+a.modello+'</span>':''}</div>
+            <div style="font-size:11px;color:var(--fg2);">${a.categoria||''}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="(function(){var a=articoli.find(x=>x.id==='${a.id}');if(a&&a.soglia>0){a.soglia--;saveArt();renderHome();renderCfg();}})()" style="width:34px;height:34px;border-radius:10px;border:none;background:var(--bg3);color:var(--fg);font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--border);">−</button>
+          <input type="number" min="0" value="${a.soglia||0}"
+            style="width:52px;padding:5px 4px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--yellow);font-family:inherit;font-size:15px;font-weight:700;text-align:center;"
+            onchange="(function(v){var a=articoli.find(x=>x.id==='${a.id}');if(a){a.soglia=Math.max(0,parseInt(v)||0);saveArt();renderHome();}})(this.value)">
+          <button onclick="(function(){var a=articoli.find(x=>x.id==='${a.id}');if(a){a.soglia++;saveArt();renderHome();renderCfg();}})()" style="width:34px;height:34px;border-radius:10px;border:none;background:var(--bg3);color:var(--fg);font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--border);">+</button>
+          <span style="font-size:11px;color:var(--fg2);">${a.unita||'pz'}</span>
+        </div>
+      </div>`).join('')
+    : '<div class="empty"><div class="empty-i">🔔</div><div class="empty-t">Nessun articolo</div></div>';
 }
 
 function savePIN() {
