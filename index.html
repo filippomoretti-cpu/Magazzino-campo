@@ -801,7 +801,8 @@ button, input, select, textarea, a, label {
       </div>
       <div class="f-group">
         <label class="f-label">Modello / Taglia</label>
-        <input class="f-input" id="a-mod" type="text" placeholder="L, 500ml…">
+        <input class="f-input" id="a-mod" type="text" list="mod-dl" placeholder="L, 500ml…">
+        <datalist id="mod-dl"></datalist>
       </div>
     </div>
     <div class="f-group">
@@ -1294,6 +1295,22 @@ function renderArt() {
 }
 
 function setCat(c) { catFilter=c; renderArt(); }
+
+// ═══ SUGGERIMENTI MODELLO PER CATEGORIA ═══
+const MOD_SUGGERIMENTI = {
+  'Museruole': ['Maschio','Femmina'],
+};
+function aggiornaModDL() {
+  const cat = document.getElementById('a-cat').value.trim();
+  const dl = document.getElementById('mod-dl');
+  dl.innerHTML = '';
+  const opts = MOD_SUGGERIMENTI[cat] || [];
+  opts.forEach(v => { const o=document.createElement('option'); o.value=v; dl.appendChild(o); });
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  const catInput = document.getElementById('a-cat');
+  if (catInput) catInput.addEventListener('input', aggiornaModDL);
+});
 
 // ═══ MODAL ARTICOLO ═══
 function openNew(bc) {
