@@ -1,6 +1,9 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no,maximum-scale=1"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Magazzino Campo</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase -->
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-firestore-compat.min.js"></script>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
 
@@ -546,6 +549,7 @@ button, input, select, textarea, a, label {
         </div>
       </div>
       <div class="topbar-right">
+        <span id="fb-status" title="Connessione cloud" style="font-size:10px;cursor:default;">🔴</span>
         <div class="role-badge" id="role-badge">—</div>
         <button class="topbar-btn" onclick="logout()" title="Esci">🚪</button>
       </div>
@@ -1000,6 +1004,30 @@ function printQR() {
   w.print();
 }
 
+// ═══ FIREBASE INIT ═══
+const firebaseConfig = {
+  apiKey: "AIzaSyCeiKlS34YGsDI33p8_0-0A2Cjb40Edcu8",
+  authDomain: "magazzino-campo.firebaseapp.com",
+  projectId: "magazzino-campo",
+  storageBucket: "magazzino-campo.firebasestorage.app",
+  messagingSenderId: "1061618499506",
+  appId: "1:1061618499506:web:c075f26d02a706ac48aeab"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Indicatore connessione
+let _fbOnline = false;
+function setOnline(v) {
+  _fbOnline = v;
+  const el = document.getElementById('fb-status');
+  if (el) {
+    el.textContent = v ? '🟢' : '🔴';
+    el.title = v ? 'Sincronizzato' : 'Offline — modifiche salvate localmente';
+  }
+}
+
+// ═══ LOAD / SAVE con Firebase + localStorage come fallback ═══
 function load() {
   try {
     articoli   = JSON.parse(localStorage.getItem('mg_art') || '[]');
@@ -1008,12 +1036,67 @@ function load() {
     managerPin = localStorage.getItem('mg_pin') || '5555';
   } catch(e) { articoli=[]; storico=[]; cfg={tel:'',key:''}; managerPin='1234'; }
 }
-function saveArt()  { try { localStorage.setItem('mg_art', JSON.stringify(articoli)); } catch(e){} }
-function saveSt()   { try { localStorage.setItem('mg_st',  JSON.stringify(storico));  } catch(e){} }
-function saveCfg()  {
+
+function saveArt() {
+  try { localStorage.setItem('mg_art', JSON.stringify(articoli)); } catch(e){}
+  db.collection('magazzino').doc('articoli').set({ data: articoli })
+    .then(()=>setOnline(true)).catch(()=>setOnline(false));
+}
+
+function saveSt() {
+  try { localStorage.setItem('mg_st', JSON.stringify(storico)); } catch(e){}
+  db.collection('magazzino').doc('storico').set({ data: storico.slice(0,300) })
+    .catch(()=>{});
+}
+
+function saveCfg() {
   cfg.tel = (document.getElementById('cfg-tel')||{}).value||'';
   cfg.key = (document.getElementById('cfg-key')||{}).value||'';
   try { localStorage.setItem('mg_cfg', JSON.stringify(cfg)); } catch(e){}
+  db.collection('magazzino').doc('cfg').set(cfg).catch(()=>{});
+}
+
+// ═══ LISTENER REAL-TIME: aggiorna tutti i dispositivi ═══
+function startFirebaseListeners() {
+  // Articoli
+  db.collection('magazzino').doc('articoli').onSnapshot(snap => {
+    if (!snap.exists) return;
+    const remoto = snap.data().data || [];
+    if (JSON.stringify(remoto) !== JSON.stringify(articoli)) {
+      articoli = remoto;
+      try { localStorage.setItem('mg_art', JSON.stringify(articoli)); } catch(e){}
+      renderArt();
+      renderHome();
+      if (curView==='cfg') renderCfg();
+    }
+    setOnline(true);
+  }, ()=>setOnline(false));
+
+  // Storico
+  db.collection('magazzino').doc('storico').onSnapshot(snap => {
+    if (!snap.exists) return;
+    const remoto = snap.data().data || [];
+    if (JSON.stringify(remoto) !== JSON.stringify(storico)) {
+      storico = remoto;
+      try { localStorage.setItem('mg_st', JSON.stringify(storico)); } catch(e){}
+      if (curView==='log') renderLog();
+    }
+  }, ()=>{});
+
+  // Cfg (tel, key)
+  db.collection('magazzino').doc('cfg').onSnapshot(snap => {
+    if (!snap.exists) return;
+    const remoto = snap.data();
+    cfg = remoto;
+    try { localStorage.setItem('mg_cfg', JSON.stringify(cfg)); } catch(e){}
+  }, ()=>{});
+
+  // Pin manager
+  db.collection('magazzino').doc('pin').onSnapshot(snap => {
+    if (!snap.exists) return;
+    managerPin = snap.data().pin || '5555';
+    try { localStorage.setItem('mg_pin', managerPin); } catch(e){}
+  }, ()=>{});
 }
 function uid() { return Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 
@@ -1501,6 +1584,7 @@ function savePIN() {
   }
   managerPin = np;
   try { localStorage.setItem('mg_pin', np); } catch(e){}
+  db.collection('magazzino').doc('pin').set({ pin: np }).catch(()=>{});
   document.getElementById('pin-attuale').textContent = np;
   document.getElementById('new-pin').value = '';
   document.getElementById('pin-ok-msg').style.display = '';
@@ -1657,12 +1741,35 @@ function loadDemo() {
 
 // ═══ INIT ═══
 const CATALOGO_VER = '9';
-load();
-// Se il catalogo è vecchio o vuoto, carica quello ufficiale
-if (!localStorage.getItem('mg_art_ver') || localStorage.getItem('mg_art_ver') !== CATALOGO_VER) {
-  loadDemo();
-  try { localStorage.setItem('mg_art_ver', CATALOGO_VER); } catch(e){}
-}
+load(); // carica localStorage come base immediata
+
+// Carica da Firebase al primo avvio, poi avvia listener real-time
+db.collection('magazzino').doc('articoli').get().then(snap => {
+  if (snap.exists && snap.data().data && snap.data().data.length > 0) {
+    // Usa i dati Firebase (fonte di verità)
+    articoli = snap.data().data;
+    try { localStorage.setItem('mg_art', JSON.stringify(articoli)); } catch(e){}
+    try { localStorage.setItem('mg_art_ver', CATALOGO_VER); } catch(e){}
+  } else {
+    // Prima volta: nessun dato su Firebase → carica catalogo demo e sincronizza
+    if (!localStorage.getItem('mg_art_ver') || localStorage.getItem('mg_art_ver') !== CATALOGO_VER) {
+      loadDemo();
+      try { localStorage.setItem('mg_art_ver', CATALOGO_VER); } catch(e){}
+    }
+  }
+  renderArt(); renderHome();
+  startFirebaseListeners();
+  setOnline(true);
+}).catch(() => {
+  // Offline: usa localStorage
+  if (!localStorage.getItem('mg_art_ver') || localStorage.getItem('mg_art_ver') !== CATALOGO_VER) {
+    loadDemo();
+    try { localStorage.setItem('mg_art_ver', CATALOGO_VER); } catch(e){}
+  }
+  renderArt(); renderHome();
+  startFirebaseListeners();
+  setOnline(false);
+});
 </script>
 
 </body></html>
